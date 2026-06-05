@@ -138,3 +138,11 @@ scripts/regenerate_mist_tools.py
 scripts/import_central_config_tools.py
 scripts/distill_mist_schemas.py
 scripts/distill_central_config_schemas.py
+
+# Migration plan doc (internal authoring aid — not redistributed)
+docs/env_secrets_migration_plan.md
+
+# Local-only files not for repo
+AGENTS.md
+docker-compose.override.yml copy.example
+.rest
