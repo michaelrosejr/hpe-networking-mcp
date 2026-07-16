@@ -228,6 +228,80 @@ class TestConfigBodyProvider:
 
 
 @pytest.mark.unit
+class TestBodyResolutionParity:
+    """The mapping fixes that reach 100% distilled-artifact parity (both modes)."""
+
+    def test_allof_ref_flattening(self, idx: SpecIndex):
+        """Pure ``allOf: [$ref Base]`` config bodies must flatten to the base's fields."""
+        body = idx.config_body("central", "dsm")
+        assert body is not None and body.get("fields")
+
+    def test_config_body_via_renamed_segment(self, idx: SpecIndex):
+        """A pluralized/renamed resource resolves (radios, not radio)."""
+        assert idx.config_body("central", "radios")
+        assert idx.config_body("central", "gw-cluster-intent-config")
+
+    def test_mist_reverse_name_mapping(self, idx: SpecIndex, monkeypatch):
+        monkeypatch.setattr(ts, "get_spec_index", lambda: idx)
+        ps = ts.payload_schema_for_tool("mist_create_site_wlan")
+        assert ps is not None and ps["object"] == "wlan"
+        assert any(f["name"] for f in ps["fields"])
+
+    def test_mist_map_body_root_descriptor(self, idx: SpecIndex, monkeypatch):
+        """Free-form map body (additionalProperties) surfaces a root shape, not blank."""
+        monkeypatch.setattr(ts, "get_spec_index", lambda: idx)
+        ps = ts.payload_schema_for_tool("mist_set_site_device_iot_port")
+        assert ps is not None and (ps.get("root") or ps.get("fields") or ps.get("variants"))
+
+    def test_schema_body_shapes(self, idx: SpecIndex):
+        assert "fields" in (idx.schema_body("mist", "wlan") or {})
+        assert idx.schema_body("mist", "no_such_schema_xyz") is None
+
+    def test_render_handles_root_and_variants(self):
+        assert "array[string]" in ts.render_payload_schema("t", {"object": "x", "root": "array[string]"})
+        assert "one of: A, B" in ts.render_payload_schema("t", {"object": "x", "variants": ["A", "B"]})
+
+
+@pytest.mark.unit
+class TestReactiveEnrichment:
+    """Reactive all-non-2xx error enrichment (Phase 3)."""
+
+    def test_response_description_representative(self, idx: SpecIndex):
+        desc = idx.response_description("mist", "429")
+        assert desc is not None and "many" in desc.lower()
+
+    def test_response_description_skips_non_representative(self, idx: SpecIndex):
+        # EdgeConnect documents per-endpoint 400s → no dominant description → skip.
+        assert idx.response_description("edgeconnect", "400") is None
+
+    def test_reactive_hint_status_meaning(self, idx: SpecIndex, monkeypatch):
+        from hpe_networking_mcp.spec_index import error_help
+
+        monkeypatch.setattr(error_help, "get_spec_index", lambda: idx)
+        monkeypatch.setattr(ts, "get_spec_index", lambda: idx)
+        hint = error_help.reactive_hint("mist_get_self", 429)
+        assert hint and "429" in hint and "spec-index" in hint
+
+    def test_reactive_hint_input_error_lists_fields(self, idx: SpecIndex, monkeypatch):
+        from hpe_networking_mcp.spec_index import error_help
+
+        monkeypatch.setattr(error_help, "get_spec_index", lambda: idx)
+        monkeypatch.setattr(ts, "get_spec_index", lambda: idx)
+        # Mist body tool (no registry needed) on a 400 lists its body fields.
+        hint = error_help.reactive_hint("mist_create_site_wlan", 400)
+        assert hint and "valid body fields" in hint
+
+    def test_reactive_hint_none_cases(self, idx: SpecIndex, monkeypatch):
+        from hpe_networking_mcp.spec_index import error_help
+
+        monkeypatch.setattr(error_help, "get_spec_index", lambda: idx)
+        monkeypatch.setattr(ts, "get_spec_index", lambda: idx)
+        assert error_help.reactive_hint("mist_get_self", 200) is None  # not an error
+        assert error_help.reactive_hint("unknown_tool", 500) is None  # no platform
+        assert error_help.reactive_hint("", 500) is None
+
+
+@pytest.mark.unit
 class TestGracefulDegradation:
     """A missing index must never raise — enrichment degrades to 'no hint'."""
 
