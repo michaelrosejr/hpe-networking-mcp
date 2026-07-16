@@ -91,3 +91,123 @@ services:
       interval: 30s
       timeout: 10s
       retries: 3
+    # Docker-secret files (mounted at /run/secrets/) take priority over the env
+    # vars above; a credential in a file wins, otherwise the matching env var is
+    # used. Comment out the platforms you don't use to avoid "file not found".
+    secrets:
+      # Mist
+      - mist_api_token
+      - mist_host
+      # Aruba Central
+      - central_base_url
+      - central_client_id
+      - central_client_secret
+      # HPE GreenLake
+      - greenlake_api_base_url
+      - greenlake_client_id
+      - greenlake_client_secret
+      - greenlake_workspace_id
+      # ClearPass
+      - clearpass_server
+      - clearpass_client_id
+      - clearpass_client_secret
+      - clearpass_verify_ssl
+      # Juniper Apstra
+      - apstra_server
+      - apstra_port
+      - apstra_username
+      - apstra_password
+      - apstra_verify_ssl
+      # Axis Atmos Cloud
+      - axis_api_token
+      # Aruba OS 8 / Mobility Conductor
+      - aos8_host
+      - aos8_username
+      - aos8_password
+      - aos8_port
+      - aos8_verify_ssl
+      # HPE UXI
+      - uxi_client_id
+      - uxi_client_secret
+      # Aruba EdgeConnect / Silver Peak Orchestrator
+      - edgeconnect_host
+      - edgeconnect_api_key
+      - edgeconnect_user
+      - edgeconnect_password
+      - edgeconnect_login_type
+      - edgeconnect_verify_ssl
+
+secrets:
+  # Mist
+  mist_api_token:
+    file: ./secrets/mist_api_token
+  mist_host:
+    file: ./secrets/mist_host
+  # Aruba Central
+  central_base_url:
+    file: ./secrets/central_base_url
+  central_client_id:
+    file: ./secrets/central_client_id
+  central_client_secret:
+    file: ./secrets/central_client_secret
+  # HPE GreenLake
+  greenlake_api_base_url:
+    file: ./secrets/greenlake_api_base_url
+  greenlake_client_id:
+    file: ./secrets/greenlake_client_id
+  greenlake_client_secret:
+    file: ./secrets/greenlake_client_secret
+  greenlake_workspace_id:
+    file: ./secrets/greenlake_workspace_id
+  # ClearPass
+  clearpass_server:
+    file: ./secrets/clearpass_server
+  clearpass_client_id:
+    file: ./secrets/clearpass_client_id
+  clearpass_client_secret:
+    file: ./secrets/clearpass_client_secret
+  clearpass_verify_ssl:
+    file: ./secrets/clearpass_verify_ssl
+  # Juniper Apstra
+  apstra_server:
+    file: ./secrets/apstra_server
+  apstra_port:
+    file: ./secrets/apstra_port
+  apstra_username:
+    file: ./secrets/apstra_username
+  apstra_password:
+    file: ./secrets/apstra_password
+  apstra_verify_ssl:
+    file: ./secrets/apstra_verify_ssl
+  # Axis Atmos Cloud
+  axis_api_token:
+    file: ./secrets/axis_api_token
+  # Aruba OS 8 / Mobility Conductor
+  aos8_host:
+    file: ./secrets/aos8_host
+  aos8_username:
+    file: ./secrets/aos8_username
+  aos8_password:
+    file: ./secrets/aos8_password
+  aos8_port:
+    file: ./secrets/aos8_port
+  aos8_verify_ssl:
+    file: ./secrets/aos8_verify_ssl
+  # HPE UXI
+  uxi_client_id:
+    file: ./secrets/uxi_client_id
+  uxi_client_secret:
+    file: ./secrets/uxi_client_secret
+  # Aruba EdgeConnect / Silver Peak Orchestrator
+  edgeconnect_host:
+    file: ./secrets/edgeconnect_host
+  edgeconnect_api_key:
+    file: ./secrets/edgeconnect_api_key
+  edgeconnect_user:
+    file: ./secrets/edgeconnect_user
+  edgeconnect_password:
+    file: ./secrets/edgeconnect_password
+  edgeconnect_login_type:
+    file: ./secrets/edgeconnect_login_type
+  edgeconnect_verify_ssl:
+    file: ./secrets/edgeconnect_verify_ssl

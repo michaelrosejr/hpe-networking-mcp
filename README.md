@@ -449,7 +449,7 @@ Docker Compose loads `.env` automatically and passes the variables into the cont
 
 ### Docker Secrets (Production)
 
-For production deployments where credentials must not be visible in `docker inspect` or `/proc/<pid>/environ`, use the Docker secrets overlay:
+For production deployments where credentials must not be visible in `docker inspect` or `/proc/<pid>/environ`, use Docker secret files. They are already wired into `docker-compose.yml` — just create the files and start normally:
 
 ```bash
 # Create secret files from templates
@@ -457,16 +457,17 @@ cp secrets/mist_api_token.example secrets/mist_api_token
 cp secrets/mist_host.example secrets/mist_host
 # Edit with real values...
 
-# Start with the secrets overlay
-docker compose -f docker-compose.yml -f docker-compose.secrets.yml up -d
+docker compose up -d
 ```
+
+A credential present as a secret **file** takes priority over the matching environment variable, so you can mix the two (secret files for sensitive platforms, `.env` for the rest).
 
 Docker secrets are:
 - Mounted **read-only** at `/run/secrets/` inside the container
 - **Not** visible in `docker inspect` or environment variables
 - **Not** baked into the Docker image
 
-> **Note:** Only include entries in `docker-compose.secrets.yml` for platforms you use. Comment out or remove entries for unused platforms to avoid "file not found" errors.
+> **Note:** `docker-compose.yml` declares a secret file for every platform. Comment out the entries for platforms you don't use to avoid "file not found" errors on startup (or supply that platform via `.env` instead).
 
 ### Credential Lookup Reference
 
@@ -750,8 +751,7 @@ hpe-networking-mcp/
 ├── .env.example                 # Environment variable template (copy to .env)
 ├── .github/workflows/           # CI, security, Docker publish
 ├── Dockerfile                   # Multi-stage build, non-root user
-├── docker-compose.yml           # Production (env var credentials from .env)
-├── docker-compose.secrets.yml   # Optional overlay for Docker secrets (production)
+├── docker-compose.yml           # Production (.env vars and/or Docker secret files)
 └── docker-compose.dev.yml       # Development (mounts tests)
 ```
 
@@ -787,11 +787,11 @@ Error response from daemon: invalid mount config for type "bind":
 bind source path does not exist: .../secrets/apstra_verify_ssl
 ```
 
-This only happens when using the Docker secrets overlay (`docker-compose.secrets.yml`). It means a secret file referenced in the overlay doesn't exist on disk.
+This means `docker-compose.yml` declares a secret file for a platform whose file doesn't exist on disk (Docker requires every referenced secret file to be present).
 
-**Fix:** Either create the missing file (`cp secrets/<name>.example secrets/<name>` and populate it), or comment out that platform's entries in `docker-compose.secrets.yml`.
+**Fix:** Either create the missing file (`cp secrets/<name>.example secrets/<name>` and populate it), or comment out that platform's entries in the `secrets:` sections of `docker-compose.yml` and supply it via `.env` instead.
 
-> **Note:** If you're using the default `.env` approach (without `docker-compose.secrets.yml`), you will never see this error — missing env vars simply disable the platform gracefully.
+> **Note:** If you provide a platform's credentials via `.env` env vars and comment out its secret entries, you will never see this error — a missing env var simply disables the platform gracefully.
 
 ### Authentication Failures
 
