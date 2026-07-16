@@ -327,3 +327,25 @@ class TestLoadConfigFromEnvVars:
         monkeypatch.setenv("AXIS_API_TOKEN", "axis-token")
         config = load_config()
         assert set(config.enabled_platforms) == {"mist", "axis"}
+
+
+@pytest.mark.unit
+class TestAllowedOrigins:
+    """ALLOWED_ORIGINS resolution — blank must fall back to localhost, not an
+    empty allowlist (Compose injects it as an empty string)."""
+
+    _LOCALHOST = ["http://localhost:8000", "http://127.0.0.1:8000"]
+
+    def test_blank_falls_back_to_localhost(self, patch_secrets_dir, monkeypatch):
+        monkeypatch.delenv("MCP_PORT", raising=False)
+        monkeypatch.setenv("ALLOWED_ORIGINS", "   ")  # whitespace-only (empty from Compose)
+        assert load_config().allowed_origins == self._LOCALHOST
+
+    def test_absent_falls_back_to_localhost(self, patch_secrets_dir, monkeypatch):
+        monkeypatch.delenv("MCP_PORT", raising=False)
+        monkeypatch.delenv("ALLOWED_ORIGINS", raising=False)
+        assert load_config().allowed_origins == self._LOCALHOST
+
+    def test_explicit_value_is_parsed(self, patch_secrets_dir, monkeypatch):
+        monkeypatch.setenv("ALLOWED_ORIGINS", "https://a.example, https://b.example")
+        assert load_config().allowed_origins == ["https://a.example", "https://b.example"]

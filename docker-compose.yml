@@ -5,7 +5,11 @@ services:
     # To build from source instead, comment out 'image' and uncomment 'build':
     # build: .
     ports:
-      - "0.0.0.0:${MCP_PORT:-8000}:8000"
+      # Loopback-bound by default: this server ships no built-in auth layer, and
+      # ALLOWED_ORIGINS is a browser-origin guard, not authentication. To expose
+      # it beyond localhost, change the host part to 0.0.0.0 (or a specific LAN
+      # IP) — but ONLY behind an authenticating reverse proxy or firewall.
+      - "127.0.0.1:${MCP_PORT:-8000}:8000"
     env_file:
       - path: .env
         required: false
@@ -49,6 +53,13 @@ services:
       # HPE UXI
       - UXI_CLIENT_ID=${UXI_CLIENT_ID:-}
       - UXI_CLIENT_SECRET=${UXI_CLIENT_SECRET:-}
+      # Aruba EdgeConnect / Silver Peak Orchestrator (host + EITHER api_key OR user+password)
+      - EDGECONNECT_HOST=${EDGECONNECT_HOST:-}
+      - EDGECONNECT_API_KEY=${EDGECONNECT_API_KEY:-}
+      - EDGECONNECT_USER=${EDGECONNECT_USER:-}
+      - EDGECONNECT_PASSWORD=${EDGECONNECT_PASSWORD:-}
+      - EDGECONNECT_LOGIN_TYPE=${EDGECONNECT_LOGIN_TYPE:-}
+      - EDGECONNECT_VERIFY_SSL=${EDGECONNECT_VERIFY_SSL:-}
       # --- Behavioral settings ---
       - ENABLE_MIST_WRITE_TOOLS=${ENABLE_MIST_WRITE_TOOLS:-false}
       - ENABLE_CENTRAL_WRITE_TOOLS=${ENABLE_CENTRAL_WRITE_TOOLS:-false}

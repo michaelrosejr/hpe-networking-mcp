@@ -674,10 +674,11 @@ def load_config() -> ServerConfig:
             logger.warning("Ignoring unknown MCP_TOOL_MODE={!r}, defaulting to 'code'", tool_mode)
             tool_mode = "code"
 
-    # ALLOWED_ORIGINS — comma-separated. Empty value falls back to the
-    # localhost defaults (most users). ``*`` disables the check.
+    # ALLOWED_ORIGINS — comma-separated. Absent OR blank/whitespace falls back
+    # to the localhost defaults (most users; Compose injects it as an empty
+    # string). ``*`` disables the check.
     allowed_origins_env = os.getenv("ALLOWED_ORIGINS")
-    if allowed_origins_env is None:
+    if not allowed_origins_env or not allowed_origins_env.strip():
         allowed_origins = [f"http://localhost:{port}", f"http://127.0.0.1:{port}"]
     else:
         allowed_origins = [o.strip() for o in allowed_origins_env.split(",") if o.strip()]
