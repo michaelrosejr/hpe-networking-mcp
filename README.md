@@ -134,7 +134,7 @@ cp .env.example .env
 # Edit .env — uncomment and fill in only the platforms you need
 ```
 
-Only platforms with **all required credentials** set will be enabled. Leave unused platforms commented out or empty — they're automatically disabled. No override file needed.
+Only platforms with **all required credentials** set will be enabled. Leave unused platforms commented out or empty — they're automatically disabled.
 
 **Example `.env` for a Mist-only deployment:**
 
@@ -159,9 +159,13 @@ CENTRAL_CLIENT_SECRET=your-client-secret
 
 ### 3. Start
 
+Credentials from a `.env` file use the env overlay, which drops the base file's Docker-secret mounts so no `secrets/*` files are needed:
+
 ```bash
-docker compose up -d
+docker compose -f docker-compose.yml -f docker-compose.env.yml up -d
 ```
+
+> Using **Docker secret files** instead of `.env`? Run the plain `docker compose up -d` — the base compose mounts the secret files directly (unchanged from prior releases). See [Docker Secrets (Production)](#docker-secrets-production).
 
 ### 4. Verify
 
@@ -435,21 +439,22 @@ Credentials are loaded via a **two-tier lookup** for each value:
 
 If both exist, the Docker secret file wins. If neither exists, the platform is disabled.
 
-### Recommended: Environment Variables (`.env` file)
+### Environment Variables (`.env` file)
 
-The simplest setup. Create a `.env` file at the project root (see [Quick Start](#2-configure-credentials)):
+The quickest setup for development — no per-platform secret files. Create a `.env` and start with the **env overlay** (`docker-compose.env.yml`), which removes the base file's Docker-secret mounts so no `secrets/*` files need to exist:
 
 ```bash
 cp .env.example .env
 chmod 600 .env
 # Edit .env with your credentials
+docker compose -f docker-compose.yml -f docker-compose.env.yml up -d
 ```
 
-Docker Compose loads `.env` automatically and passes the variables into the container. This is secure for most use cases — the `.env` file is git-ignored and never leaves your machine.
+The `.env` file is git-ignored and never leaves your machine. For multiple isolated instances, add `--env-file .env-<name> -p <name>` (see `.env.example`).
 
 ### Docker Secrets (Production)
 
-For production deployments where credentials must not be visible in `docker inspect` or `/proc/<pid>/environ`, use Docker secret files. They are already wired into `docker-compose.yml` — just create the files and start normally:
+For production deployments where credentials must not be visible in `docker inspect` or `/proc/<pid>/environ`, use Docker secret files. They are wired into the base `docker-compose.yml`, so the plain command works **unchanged from prior releases** — just create the files and start:
 
 ```bash
 # Create secret files from templates
@@ -460,14 +465,14 @@ cp secrets/mist_host.example secrets/mist_host
 docker compose up -d
 ```
 
-A credential present as a secret **file** takes priority over the matching environment variable, so you can mix the two (secret files for sensitive platforms, `.env` for the rest).
+A credential present as a secret **file** takes priority over the matching environment variable, so you can mix the two (secret files for sensitive platforms, `.env` for the rest — omit the env overlay when you want the secret mounts).
 
 Docker secrets are:
 - Mounted **read-only** at `/run/secrets/` inside the container
 - **Not** visible in `docker inspect` or environment variables
 - **Not** baked into the Docker image
 
-> **Note:** `docker-compose.yml` declares a secret file for every platform. Comment out the entries for platforms you don't use to avoid "file not found" errors on startup (or supply that platform via `.env` instead).
+> **Note:** the base `docker-compose.yml` declares a secret file for every platform, so plain `docker compose up -d` expects those files to exist. Either create a file per platform you use (and comment out the rest in the `secrets:` sections), or supply credentials via `.env` with the env overlay above — that path needs no `secrets/*` files at all.
 
 ### Credential Lookup Reference
 
@@ -751,7 +756,8 @@ hpe-networking-mcp/
 ├── .env.example                 # Environment variable template (copy to .env)
 ├── .github/workflows/           # CI, security, Docker publish
 ├── Dockerfile                   # Multi-stage build, non-root user
-├── docker-compose.yml           # Production (.env vars and/or Docker secret files)
+├── docker-compose.yml           # Base — mounts Docker secret files (plain `up -d`)
+├── docker-compose.env.yml       # Overlay — drops secret mounts for the `.env` path
 └── docker-compose.dev.yml       # Development (mounts tests)
 ```
 
@@ -778,7 +784,7 @@ Mist: disabled (mist_api_token secret not found)
 Central: disabled (missing secrets: central_client_id, central_client_secret)
 ```
 
-**Fix:** Set the missing credentials in your `.env` file (or Docker secret files if using the secrets overlay). If you *intended* to disable that platform, ignore the message — the server continues running with the platforms that do have credentials.
+**Fix:** Set the missing credentials in your `.env` file (or the matching Docker secret file). If you *intended* to disable that platform, ignore the message — the server continues running with the platforms that do have credentials.
 
 ### Container exits immediately with `invalid mount config for type "bind"`
 
@@ -787,11 +793,11 @@ Error response from daemon: invalid mount config for type "bind":
 bind source path does not exist: .../secrets/apstra_verify_ssl
 ```
 
-This means `docker-compose.yml` declares a secret file for a platform whose file doesn't exist on disk (Docker requires every referenced secret file to be present).
+This means the base `docker-compose.yml` declares a secret file for a platform whose file doesn't exist on disk (Docker requires every referenced secret file to be present before the container starts).
 
-**Fix:** Either create the missing file (`cp secrets/<name>.example secrets/<name>` and populate it), or comment out that platform's entries in the `secrets:` sections of `docker-compose.yml` and supply it via `.env` instead.
-
-> **Note:** If you provide a platform's credentials via `.env` env vars and comment out its secret entries, you will never see this error — a missing env var simply disables the platform gracefully.
+**Fix — pick one:**
+- **Using `.env` for credentials?** Add the env overlay, which removes all secret mounts: `docker compose -f docker-compose.yml -f docker-compose.env.yml up -d`. No `secrets/*` files are needed on this path.
+- **Using Docker secret files?** Create the missing file (`cp secrets/<name>.example secrets/<name>` and populate it), or comment out that platform's entries in the `secrets:` sections of `docker-compose.yml`.
 
 ### Authentication Failures
 
