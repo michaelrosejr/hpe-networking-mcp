@@ -750,7 +750,7 @@ hpe-networking-mcp/
 │       ├── sync_prompts.py      # Cross-platform WLAN sync prompts
 │       ├── site_health_check.py # Cross-platform site health aggregator
 │       └── site_rf_check.py     # Cross-platform Wi-Fi RF dashboard
-├── tests/                       # Unit and integration tests (1770+ unit tests)
+├── tests/                       # Unit and integration tests (2090+ unit tests)
 ├── docs/                        # PRD, PRP, tool reference
 ├── secrets/                     # Secret file templates (.example only in git)
 ├── .env.example                 # Environment variable template (copy to .env)
