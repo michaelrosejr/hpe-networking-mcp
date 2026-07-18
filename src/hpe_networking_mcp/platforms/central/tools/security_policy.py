@@ -92,6 +92,146 @@ _READ_OFFSET_FIELD = Field(
 # ---------------------------------------------------------------------------
 
 
+def build_config_read_params(
+    *,
+    view_type: str | None = None,
+    object_type: str | None = None,
+    scope_id: str | None = None,
+    device_function: str | None = None,
+    effective: bool | None = None,
+    detailed: bool | None = None,
+    limit: int | None = None,
+    offset: int | None = None,
+) -> dict:
+    """Build the kebab-case query dict for a network-config/v1alpha1 GET.
+
+    Shared by ``_get_resource`` and the hand-curated config readers that can't
+    delegate to it (composite fetchers that collect per-resource errors instead
+    of raising). Keeping the rules here means the two upstream quirks below are
+    enforced once rather than re-derived per tool.
+
+    Both quirks were confirmed against the live API, which **ignores** unknown
+    or incomplete query params rather than erroring — so getting either wrong
+    fails silently with plausible-looking data:
+
+    * ``limit`` is only honored when ``offset`` is also sent. On its own it is
+      ignored and the full collection comes back, so a caller who asked for a
+      page silently receives everything. A ``limit`` without an ``offset``
+      therefore defaults the offset to 0.
+    * ``view_type='LOCAL'`` without a ``scope_id`` returns *another* scope's
+      configuration instead of failing, so it is rejected.
+
+    Returns:
+        Query params with ``None`` values omitted, so the API's own defaults
+        apply for anything the caller didn't ask for.
+
+    Raises:
+        ToolError: 400 when ``view_type='LOCAL'`` is given without ``scope_id``.
+    """
+    if view_type and view_type.upper() == "LOCAL" and not scope_id:
+        raise ToolError(
+            {
+                "status_code": 400,
+                "message": (
+                    "view_type='LOCAL' requires scope_id — without it the API returns "
+                    "a different scope's configuration instead of failing."
+                ),
+            }
+        )
+
+    if limit is not None and offset is None:
+        offset = 0
+
+    params = {
+        "view-type": view_type,
+        "object-type": object_type,
+        "scope-id": scope_id,
+        "device-function": device_function,
+        "effective": effective,
+        "detailed": detailed,
+        "limit": limit,
+        "offset": offset,
+    }
+    return {k: v for k, v in params.items() if v is not None}
+
+
+def build_config_write_params(
+    *,
+    object_type: str | None = None,
+    scope_id: str | None = None,
+    device_function: str | None = None,
+) -> dict:
+    """Build the kebab-case query dict for a network-config/v1alpha1 write.
+
+    The OAS documents three scope-selecting query params on every config
+    POST/PATCH/DELETE:
+
+    * ``object-type`` — ``LOCAL`` creates a scoped object, ``SHARED`` creates a
+      library object. The API defaults to ``SHARED`` when omitted.
+    * ``scope-id`` / ``device-function`` — **mandatory** for ``LOCAL`` and must
+      **not** be supplied for ``SHARED``.
+
+    Enforced here so every write tool behaves identically and the two footguns
+    the old inline logic had are closed (the API silently ignores bad/partial
+    query params, so both used to fail silently):
+
+    * It hardcoded ``object-type=LOCAL`` and only sent scope params when *both*
+      ``scope_id`` and ``device_function`` were present — so ``SHARED`` was
+      unreachable and passing only one of the pair silently dropped both,
+      landing the write at the wrong scope.
+
+    Backward-compatible: a caller that passes ``scope_id``/``device_function``
+    without an explicit ``object_type`` still gets a ``LOCAL`` write, matching
+    the prior behavior.
+
+    Returns:
+        Query params with ``None`` omitted (empty dict → the API's ``SHARED``
+        default applies).
+
+    Raises:
+        ToolError: 400 for ``LOCAL`` without both scope params, ``SHARED`` with
+            either scope param, or an unrecognized ``object_type``.
+    """
+    ot = object_type.upper() if object_type else None
+    # Infer LOCAL when a scope is given without an explicit object_type.
+    if ot is None and (scope_id or device_function):
+        ot = "LOCAL"
+
+    if ot is None:
+        return {}  # API default: SHARED (library object)
+
+    if ot == "LOCAL":
+        if not (scope_id and device_function):
+            raise ToolError(
+                {
+                    "status_code": 400,
+                    "message": (
+                        "object_type='LOCAL' requires both scope_id and device_function "
+                        "(supplying only one silently lands the write at the wrong scope). "
+                        "Get scope IDs from central_get_scope_tree."
+                    ),
+                }
+            )
+        return {"object-type": "LOCAL", "scope-id": scope_id, "device-function": device_function}
+
+    if ot == "SHARED":
+        if scope_id or device_function:
+            raise ToolError(
+                {
+                    "status_code": 400,
+                    "message": (
+                        "object_type='SHARED' creates a library object and must not be given "
+                        "with scope_id or device_function (those select a LOCAL scope)."
+                    ),
+                }
+            )
+        return {"object-type": "SHARED"}
+
+    raise ToolError(
+        {"status_code": 400, "message": f"Invalid object_type {object_type!r}: expected 'LOCAL' or 'SHARED'."}
+    )
+
+
 async def _get_resource(
     ctx: Context,
     api_base: str,
@@ -109,50 +249,26 @@ async def _get_resource(
     """Generic GET for /network-config/v1alpha1/{api_base}[/{name}].
 
     The keyword-only arguments map to the query parameters documented on every
-    ``network-config/v1alpha1`` GET endpoint. ``None`` values are omitted from
-    the request, so the API's own defaults apply.
-
-    Two upstream quirks are normalized here (both confirmed against the live
-    API, which ignores unknown/incomplete query params rather than erroring):
-
-    * ``limit`` is only honored when ``offset`` is also sent — on its own it is
-      silently ignored and the full collection comes back. A ``limit`` without
-      an ``offset`` therefore defaults the offset to 0 so the caller gets the
-      page size they asked for instead of everything.
-    * ``view_type='LOCAL'`` without a ``scope_id`` returns another scope's
-      configuration instead of failing, so it is rejected here.
+    ``network-config/v1alpha1`` GET endpoint; see
+    :func:`build_config_read_params` for how they're normalized.
 
     Raises:
         ToolError: 400 when ``view_type='LOCAL'`` is requested without a
-            ``scope_id``.
+            ``scope_id``; the upstream status when the GET itself fails.
     """
-    if view_type and view_type.upper() == "LOCAL" and not scope_id:
-        raise ToolError(
-            {
-                "status_code": 400,
-                "message": (
-                    "view_type='LOCAL' requires scope_id — without it the API returns "
-                    "a different scope's configuration instead of failing."
-                ),
-            }
-        )
-
-    if limit is not None and offset is None:
-        offset = 0
+    api_params = build_config_read_params(
+        view_type=view_type,
+        object_type=object_type,
+        scope_id=scope_id,
+        device_function=device_function,
+        effective=effective,
+        detailed=detailed,
+        limit=limit,
+        offset=offset,
+    )
 
     conn = get_central_conn(ctx)
     api_path = f"network-config/v1alpha1/{api_base}/{path_seg(name)}" if name else f"network-config/v1alpha1/{api_base}"
-    api_params: dict = {
-        "view-type": view_type,
-        "object-type": object_type,
-        "scope-id": scope_id,
-        "device-function": device_function,
-        "effective": effective,
-        "detailed": detailed,
-        "limit": limit,
-        "offset": offset,
-    }
-    api_params = {k: v for k, v in api_params.items() if v is not None}
     response = await retry_central_command(
         central_conn=conn,
         api_method="GET",
@@ -177,12 +293,18 @@ async def _manage_resource(
     scope_id: str | None,
     device_function: str | None,
     confirmed: bool,
+    *,
+    object_type: str | None = None,
 ) -> dict | str:
     """Generic POST/PATCH/DELETE for /network-config/v1alpha1/{api_base}[/{name}].
 
     When ``name`` is ``None`` or empty, the URL omits the trailing
     ``/{name}`` segment so singleton config objects (e.g. ``system-info``,
     ``firmware-compliance``) can use the same helper.
+
+    ``object_type`` / ``scope_id`` / ``device_function`` select where the object
+    is written; see :func:`build_config_write_params` for the LOCAL/SHARED rules.
+    ``object_type`` is keyword-only so existing positional callers keep working.
     """
     if action_type not in ("create", "update", "delete"):
         raise ToolError(
@@ -198,11 +320,7 @@ async def _manage_resource(
 
     conn = get_central_conn(ctx)
 
-    api_params: dict = {}
-    if scope_id and device_function:
-        api_params["object-type"] = "LOCAL"
-        api_params["scope-id"] = scope_id
-        api_params["device-function"] = device_function
+    api_params = build_config_write_params(object_type=object_type, scope_id=scope_id, device_function=device_function)
 
     api_data = payload if action_type != "delete" else None
 
@@ -275,19 +393,28 @@ async def _operation_request(
 
 
 # Common field definitions reused across write tools
+_OBJECT_TYPE_FIELD = Field(
+    description=(
+        "Where to write the object. 'SHARED' (the API default) creates a "
+        "library object; 'LOCAL' creates a scoped object and requires both "
+        "scope_id and device_function. Omitting object_type while providing "
+        "scope_id/device_function is treated as 'LOCAL'."
+    ),
+    default=None,
+)
 _SCOPE_ID_FIELD = Field(
     description=(
-        "Scope ID for local (scoped) objects. If provided, creates a "
-        "local object at this scope. Omit for shared/library objects. "
+        "Scope ID for a LOCAL (scoped) object. Required when "
+        "object_type='LOCAL'; must be omitted for SHARED objects. "
         "Get scope IDs from central_get_scope_tree."
     ),
     default=None,
 )
 _DEVICE_FUNCTION_FIELD = Field(
     description=(
-        "Device function for scoped objects. Required when scope_id "
-        "is provided. Valid: CAMPUS_AP, ACCESS_SWITCH, BRANCH_GW, "
-        "MOBILITY_GW, CORE_SWITCH, AGG_SWITCH, ALL."
+        "Device function for a LOCAL (scoped) object. Required when "
+        "object_type='LOCAL'; must be omitted for SHARED. Valid: CAMPUS_AP, "
+        "ACCESS_SWITCH, BRANCH_GW, MOBILITY_GW, CORE_SWITCH, AGG_SWITCH, ALL."
     ),
     default=None,
 )

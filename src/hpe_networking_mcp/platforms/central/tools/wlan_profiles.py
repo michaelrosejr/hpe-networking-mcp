@@ -14,6 +14,21 @@ from pydantic import Field
 from hpe_networking_mcp.platforms._common.annotations import Capability
 from hpe_networking_mcp.platforms._common.url import path_seg
 from hpe_networking_mcp.platforms.central._registry import tool
+from hpe_networking_mcp.platforms.central.tools.security_policy import (
+    _DEVICE_FUNCTION_FIELD,
+    _OBJECT_TYPE_FIELD,
+    _READ_DETAILED_FIELD,
+    _READ_DEVICE_FUNCTION_FIELD,
+    _READ_EFFECTIVE_FIELD,
+    _READ_LIMIT_FIELD,
+    _READ_OBJECT_TYPE_FIELD,
+    _READ_OFFSET_FIELD,
+    _READ_SCOPE_ID_FIELD,
+    _READ_VIEW_TYPE_FIELD,
+    _SCOPE_ID_FIELD,
+    _get_resource,
+    build_config_write_params,
+)
 from hpe_networking_mcp.platforms.central.utils import get_central_conn, retry_central_command
 
 
@@ -21,6 +36,14 @@ from hpe_networking_mcp.platforms.central.utils import get_central_conn, retry_c
 async def central_get_wlan_profiles(
     ctx: Context,
     ssid: str | None = None,
+    view_type: Annotated[str | None, _READ_VIEW_TYPE_FIELD] = None,
+    object_type: Annotated[str | None, _READ_OBJECT_TYPE_FIELD] = None,
+    scope_id: Annotated[str | None, _READ_SCOPE_ID_FIELD] = None,
+    device_function: Annotated[str | None, _READ_DEVICE_FUNCTION_FIELD] = None,
+    effective: Annotated[bool | None, _READ_EFFECTIVE_FIELD] = None,
+    detailed: Annotated[bool | None, _READ_DETAILED_FIELD] = None,
+    limit: Annotated[int | None, _READ_LIMIT_FIELD] = None,
+    offset: Annotated[int | None, _READ_OFFSET_FIELD] = None,
 ) -> dict | list | str:
     """
     Get WLAN SSID profiles from Central's configuration library.
@@ -34,20 +57,35 @@ async def central_get_wlan_profiles(
 
     Parameters:
         ssid: Specific SSID name to retrieve. If omitted, returns all profiles.
+        view_type: ``'LOCAL'`` for a scope's profiles (needs ``scope_id``), or
+            ``'LIBRARY'`` for the shared library.
+        object_type: Filter to ``'LOCAL'`` or ``'SHARED'`` objects.
+        scope_id: Scope whose profiles to return. Required with
+            ``view_type='LOCAL'``. Get IDs from ``central_get_scope_tree``.
+        device_function: Filter to a device function (WLANs are ``CAMPUS_AP``).
+        effective: ``True`` for effective (inherited/merged) config; ``False``
+            for only what is committed at this scope.
+        detailed: ``True`` to annotate each profile with its scope/device
+            function of origin.
+        limit: Pagination limit.
+        offset: Pagination offset.
 
     Returns:
         Single profile dict if ssid specified, or list of all profiles.
     """
-    conn = get_central_conn(ctx)
-
-    api_path = f"network-config/v1alpha1/wlan-ssids/{path_seg(ssid)}" if ssid else "network-config/v1alpha1/wlan-ssids"
-
-    response = await retry_central_command(
-        central_conn=conn,
-        api_method="GET",
-        api_path=api_path,
+    return await _get_resource(
+        ctx,
+        "wlan-ssids",
+        ssid,
+        view_type=view_type,
+        object_type=object_type,
+        scope_id=scope_id,
+        device_function=device_function,
+        effective=effective,
+        detailed=detailed,
+        limit=limit,
+        offset=offset,
     )
-    return response.get("msg", {})
 
 
 @tool(capability=Capability.WRITE_DELETE)
@@ -115,6 +153,9 @@ async def central_manage_wlan_profile(
             default=False,
         ),
     ] = False,
+    object_type: Annotated[str | None, _OBJECT_TYPE_FIELD] = None,
+    scope_id: Annotated[str | None, _SCOPE_ID_FIELD] = None,
+    device_function: Annotated[str | None, _DEVICE_FUNCTION_FIELD] = None,
     confirmed: Annotated[
         bool,
         Field(
@@ -203,6 +244,10 @@ async def central_manage_wlan_profile(
     if action_type != "delete":
         api_data = payload
 
+    # Scope selection (LOCAL vs SHARED library) — same rules as every other
+    # config write; raises 400 on an inconsistent object_type/scope combination.
+    api_params = build_config_write_params(object_type=object_type, scope_id=scope_id, device_function=device_function)
+
     logger.info("Central WLAN: {} '{}' — path: {}", api_method, ssid, api_path)
 
     response = await retry_central_command(
@@ -210,6 +255,7 @@ async def central_manage_wlan_profile(
         api_method=api_method,
         api_path=api_path,
         api_data=api_data,
+        api_params=api_params or None,
     )
 
     code = response.get("code", 0)

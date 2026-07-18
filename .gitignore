@@ -137,10 +137,7 @@ scripts/internal/
 # Baked spec-lookup index (built at image time by scripts/build_spec_index.py)
 src/hpe_networking_mcp/spec_index/spec_index.db
 
-# Migration plan doc (internal authoring aid — not redistributed)
-docs/env_secrets_migration_plan.md
-
-# Local-only files not for repo
-AGENTS.md
-docker-compose.override.yml copy.example
-.rest
+# Operator/AI session transcripts captured from live customer tenants for
+# debugging. These contain real device serials, scope names, and org-identifying
+# strings, and must never reach the public repo. Keep local-only.
+docs/issues/

@@ -18,7 +18,7 @@ Tools are namespaced by platform:
 
 Two modes are supported (the `static` mode was removed in v3.0.0.0):
 
-- **`MCP_TOOL_MODE=code`** (default since v3.0.0.0) — only `execute` + 5 discovery tools (`tags`, `search`, `get_schema`, `skills_list`, `skills_load`) are visible at the top level. All 4136 underlying tools are reachable from inside a sandboxed Python `execute()` block — discover names with `search` / `<platform>_list_tools`, then call EITHER directly by name (`await call_tool("mist_search_org_devices", {...})`) OR via `await call_tool("<platform>_invoke_tool", {"name": "<tool>", "params": {...}})`; both work for every platform (Mist included, as of v3.4.5.6). The smallest initial surface; best for orchestrators driving small / local LLMs.
+- **`MCP_TOOL_MODE=code`** (default since v3.0.0.0) — only `execute` + 5 discovery tools (`tags`, `search`, `get_schema`, `skills_list`, `skills_load`) are visible at the top level. All 4149 underlying tools are reachable from inside a sandboxed Python `execute()` block — discover names with `search` / `<platform>_list_tools`, then call EITHER directly by name (`await call_tool("mist_search_org_devices", {...})`) OR via `await call_tool("<platform>_invoke_tool", {"name": "<tool>", "params": {...}})`; both work for every platform (Mist included, as of v3.4.5.6). The smallest initial surface; best for orchestrators driving small / local LLMs.
 - **`MCP_TOOL_MODE=dynamic`** (opt-in since v3.0.0.0; was the v2.x default) — 24 tools visible:
     - **cross-platform tools**: `health`, `site_health_check`, `site_rf_check`, `translate_wlan_preview`, `translate_wlan_apply`, `translate_config_preview`, `translate_config_apply`
     - **3 meta-tools per platform × 9 platforms** = 27: `<platform>_list_tools`, `<platform>_get_tool_schema`, `<platform>_invoke_tool`
@@ -336,7 +336,7 @@ A literal `{"message": "Action declined by user."}` (without `confirmation_requi
 
 ## Tool Catalog (v3.1.0.0 spec-driven)
 
-**Mist tooling is now generated from the upstream Juniper Mist OpenAPI spec** (1037 tools, one per REST endpoint). Tools follow the `mist_<snake_case_operationId>` convention:
+**Mist tooling is now generated from the upstream Juniper Mist OpenAPI spec** (1050 tools, one per REST endpoint). Tools follow the `mist_<snake_case_operationId>` convention:
 
 - GET on a collection → `mist_list_<resource>` (e.g. `mist_list_org_sites`)
 - GET on an item → `mist_get_<resource>` (e.g. `mist_get_self`)
@@ -464,7 +464,7 @@ When asked to create a new site based on an existing site:
 - **Security & Policy**: central_get_net_groups, central_manage_net_groups, central_get_net_services, central_manage_net_services, central_get_object_groups, central_manage_object_groups, central_get_role_acls, central_manage_role_acls, central_get_policies, central_manage_policies, central_get_policy_groups, central_manage_policy_groups, central_get_role_gpids, central_manage_role_gpids
   - Net-groups define WHERE traffic goes (hosts, FQDNs, subnets). Net-services define WHAT traffic is (protocol/port).
   - Role-ACLs use net-groups + net-services to build permit/deny rules. Policies group ACL rules. Policy-groups order policies. Role-GPIDs map roles to policy-groups.
-  - All write tools support shared (library) and local (scoped) objects via scope_id + device_function params.
+  - **Writing config-model objects at a scope** (every `central_manage_*` config tool; v3.6.1.1+): pass `object_type` — `'SHARED'` (the default) creates a library object; `'LOCAL'` creates a scoped object and **requires both** `scope_id` and `device_function` (get scope IDs from `central_get_scope_tree`). Supplying only one of the pair, or `scope_id`/`device_function` with `object_type='SHARED'`, is rejected with a 400 (it used to silently write to the wrong scope). Omitting `object_type` while passing scope params is treated as `LOCAL`.
 - **Aliases, Server Groups, Named VLANs**: central_get_aliases, central_get_server_groups, central_get_named_vlan
   - Use `central_get_aliases` to resolve alias names used in WLAN profiles (SSID aliases, PSK aliases), server groups, and VLANs. Aliases can be scoped per-site.
   - Use `central_get_server_groups` to resolve a server group name (from auth-server-group) to actual RADIUS server addresses (FQDN or IP), ports, and settings
