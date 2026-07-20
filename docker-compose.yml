@@ -74,8 +74,9 @@ services:
       - DISABLE_ELICITATION=${DISABLE_ELICITATION:-false}
       # Origin validation allowlist. Comma-separated origins, or "*" to
       # disable the check (useful behind a reverse proxy or when binding
-      # to 0.0.0.0 for non-localhost access). Default: localhost only.
-      - ALLOWED_ORIGINS=${ALLOWED_ORIGINS:-}
+      # to 0.0.0.0 for non-localhost access). Defaults to the HOST_PORT
+      # value so multi-instance deployments get the right origin automatically.
+      - ALLOWED_ORIGINS=${ALLOWED_ORIGINS:-http://localhost:${HOST_PORT:-8000},http://127.0.0.1:${HOST_PORT:-8000}}
       # PII tokenization (opt-in). When true, sensitive fields (PSKs, RADIUS
       # secrets, hostnames, emails, usernames, serials) are replaced with
       # session-stable [[KIND:uuid]] tokens before responses reach the AI.

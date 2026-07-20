@@ -657,7 +657,7 @@ The retry logic detects transient failures in two patterns: response-dict (Mist/
 |---------------------|---------|-------------|
 | `MCP_PORT` | `8000` | Port the MCP server listens on |
 | `MCP_HOST` | `0.0.0.0` | Bind address **inside the container's namespace** — leave at `0.0.0.0` so Docker's port-forwarder can reach the app. Restrict who can reach the host port via `ports:` in compose, not this. |
-| `ALLOWED_ORIGINS` | `http://localhost:<MCP_PORT>,http://127.0.0.1:<MCP_PORT>` | Comma-separated allowlist for the `Origin` request header (DNS-rebinding defense per MCP spec). Browsers always send `Origin`; non-browser clients (supergateway, curl) don't and pass through. Set to `*` to disable the check (use only behind an auth proxy). |
+| `ALLOWED_ORIGINS` | `http://localhost:<HOST_PORT>,http://127.0.0.1:<HOST_PORT>` | Comma-separated allowlist for the `Origin` request header (DNS-rebinding defense per MCP spec). Compose derives the default from `HOST_PORT` so multi-instance setups get the right origin automatically. Browsers always send `Origin`; non-browser clients (supergateway, curl) don't and pass through. Set to `*` to disable the check (use only behind an auth proxy). |
 | `SECRETS_DIR` | `/run/secrets` | Directory for Docker secret files (credentials in files here take priority over env vars) |
 | `LOG_LEVEL` | `info` | Logging level (`debug`, `info`, `warning`, `error`) |
 | `ENABLE_MIST_WRITE_TOOLS` | `false` | Enable Mist write/mutation tools |
@@ -841,7 +841,7 @@ ports:
   - "127.0.0.1:8080:8000"    # Map to port 8080 instead, loopback-only
 ```
 
-If you change the host port, also update `ALLOWED_ORIGINS` so it matches (e.g. `ALLOWED_ORIGINS=http://localhost:8080,http://127.0.0.1:8080`) — the default tracks `MCP_PORT` (which is the *container* port, 8000), not the host port.
+If you change the host port via `HOST_PORT`, the Compose default for `ALLOWED_ORIGINS` tracks it automatically (`http://localhost:<HOST_PORT>`). You only need to set `ALLOWED_ORIGINS` explicitly if you're using a custom domain or reverse-proxy URL.
 
 ### Tools Not Appearing in AI Client
 
