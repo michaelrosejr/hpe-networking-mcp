@@ -270,6 +270,7 @@ The `execute()` sandbox uses `pydantic-monty` for its Python parser. It supports
 - `re` (verified — used by Stage 9b filtering helpers)
 - The clock: `datetime.now()`, `datetime.now(datetime.timezone.utc)`, `datetime.date.today()` (verified — the sandbox grants a read-only host clock; see the blocked table for the `utcnow()` / `time` gaps)
 - The injected `await call_tool(name, params)` for platform tool dispatch
+- The injected `await report_progress(progress, total=None, message=None)` for streaming status to the client during long multi-call blocks (harmless no-op when the client didn't request progress — always safe to call; see pattern 5)
 
 **Known-blocked** — using any of these returns a sandbox error:
 
@@ -302,7 +303,26 @@ The sandbox kills any `execute()` block that runs longer than the configured bud
 
 For these tools: **call them in their own `execute()` block — don't chain other calls after them** — and lower `max_attempts` / `poll_interval` when you need a tighter budget. A block that runs `central_cable_test` plus another Central read will routinely breach the default 30s with `TimeoutError: time limit exceeded`.
 
-### 5. Write confirmation is structural — a real prompt first, `confirmation_required` only as fallback
+### 5. Stream progress on long multi-call blocks with `report_progress`
+
+When a block makes many sequential `call_tool` invocations — a per-scope classification sweep, a multi-stage migration plan, a fan-out across sites — call `await report_progress(done, total, message)` as you go so the client can show a live status line instead of a silent spinner. It's a harmless no-op on clients that didn't request progress, so it is always safe to include.
+
+```python
+# ✅ Stream status across a per-scope sweep.
+scopes = (await call_tool("central_get_scope_tree", {}))["data"]["children"]
+total = len(scopes)
+results = []
+for i, s in enumerate(scopes):
+    await report_progress(i + 1, total, f"classifying {s['scope_name']} ({i + 1}/{total})")
+    cfg = await call_tool("central_get_config_assignments", {"scope_id": s["scope_id"]})
+    results.append(cfg["data"])
+result = {"scope_count": total, "results": results}
+result
+```
+
+Signature: `report_progress(progress: float, total: float | None = None, message: str | None = None)`. `total` lets the client render a percentage; `message` is a short human-readable status. Do NOT `report_progress` from a block that makes only one call — the overhead isn't worth it, and the sandbox already returns quickly.
+
+### 6. Write confirmation is structural — a real prompt first, `confirmation_required` only as fallback
 
 Destructive tools are confirmed by a universal gate at `<platform>_invoke_tool` dispatch: it shows a REAL confirmation prompt whenever your client supports MCP elicitation — including from inside code-mode `execute()` blocks, where the prompt round-trips transparently. Passing `confirmed=true` does NOT skip a working prompt; the human's answer always wins. Only when no prompt can be shown does the flow below apply.
 
@@ -426,7 +446,7 @@ When asked to create a new site based on an existing site:
   - Use `central_get_scope_resources` to see what configuration profiles are assigned at a specific scope level (legacy walker; `central_get_committed_config` returns the same data in a shape that diffs cleanly against `central_get_effective_config`)
   - Use `central_get_committed_config(scope_id, persona?, include_details=True)` to see resources directly assigned AT a scope — same per-resource shape as `central_get_effective_config` for clean side-by-side diff when asking "what did the parent contribute vs what was added here?" (v3.1.7.0+)
   - Use `central_get_effective_config` to see what configuration a device inherits and from where — pass `include_details=true` for full resource configuration data
-  - Use `central_get_scope_diagram` to generate a Mermaid flowchart of the scope hierarchy — **deprecated for visualization** (sprawls horizontally on real tenants); for visualization use the `central-scope-visualizer` skill which fetches the structured tree and lets the AI build whatever diagram fits the request
+  - Use `central_get_scope_diagram` to generate a Mermaid flowchart of the scope hierarchy — **deprecated for visualization** (sprawls horizontally on real tenants); for visualization use the `central-scope-visualizer` skill, which renders the hierarchy (collapsible tree + per-scope profile names) via Generative UI and classifies every committed profile as shared / local / overridden / orphaned (finding stray and nameless configs)
   - **Presenting scope data**: Each scope node includes `persona_count`, `resource_count`, and per-persona `categories` (e.g. policy, vlan, profile). Present as an indented hierarchy with counts at each level. Group resources by category, not as flat lists. For effective config, show the `inheritance_path` first (Global → Collection → Site), then group resources by origin scope to show what each level contributes. Use the `scope_configuration_overview` or `scope_effective_config` prompts for guided workflows.
 - **Config Health & Resync**: central_get_devices_config_health (fleet view — spot `OUT_OF_SYNC` / non-zero `activeIssues`), central_get_device_config_issues (drill into one serial), central_resync_device_config
   - When a device is `OUT_OF_SYNC` or shows `CONFIG_PUSH_FAILURES`, call `central_resync_device_config(serials=[...])` to force a full configuration re-push. Operational annotation — runs immediately, no elicitation, not write-gated. Idempotent and non-destructive (re-applies the *intended* config; does not change it).

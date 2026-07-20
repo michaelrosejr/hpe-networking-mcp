@@ -5,6 +5,21 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.6.1.6] - 2026-07-20
+
+### Added
+- **Code-mode `execute()` sandbox can now stream progress to the client via `report_progress`.** Long-running skill blocks — the central-scope-visualizer per-scope classification sweep, the aos-migration multi-stage plan, any fan-out across many sites — previously ran as a single opaque `execute()` call, leaving the client on a silent spinner for the whole duration. The sandbox now injects a second external function alongside `call_tool`: `await report_progress(progress: float, total: float | None = None, message: str | None = None)`. Code blocks call it as they advance (`await report_progress(i, n, f"classifying scope {i}/{n}")`) and the client renders a live status line. Per the FastMCP progress contract it is a harmless no-op when the client didn't send a `progressToken`, so it is always safe to include and degrades gracefully on clients that don't render progress. Wired via a new `_HpeCodeMode` subclass of FastMCP's `CodeMode` (`server._hpe_code_mode_class`) that overrides `_make_execute_tool` to add the function bound to the live per-call `ctx`; a faithful copy of the upstream `call_tool` closure with the addition, pinned by `tests/unit/test_code_mode_progress.py` so a fastmcp upgrade that changes the copied internals fails loudly. The `execute` tool description and INSTRUCTIONS.md sandbox guidance (pattern 5) document the function for the model.
+
+## [3.6.1.5] - 2026-07-20
+
+### Changed
+- **`central-scope-visualizer` skill reworked into a config-placement + classification view (Generative UI).** It now renders the scope hierarchy as a collapsible tree (profile count per node) plus a per-scope breakdown of the actual profile **names** (from `central_get_config_assignments`, not generic types), and classifies every committed profile five ways: **shared** (library), **local** (device-intrinsic type with no shared library, e.g. `system-info` — normal), **overridden** ⚠ (a LOCAL object whose name matches a SHARED profile assigned upstream — the local supersedes it), **orphaned-local** ⚠ (a LOCAL object of a type that has a shared library but no SHARED match upstream), and **orphaned-unnamed** ⚠ (an assignment with an empty `profile-instance`). Global-level alerts are ignored (config view, not health). The local/shared distinction reads the object's `object_type` annotation **quote-agnostically** (the annotation arrives both as a parsed dict and as a single-quoted stringified `@` blob). Replaces the prior Mermaid-first "build whatever diagram" runbook. Snippets are sandbox-compatible (sequential `await`, no `asyncio.gather`/`collections`) and the gather+classify logic is live-verified against a real tenant (found the 2 nameless `policy-groups` orphans).
+
+## [3.6.1.4] - 2026-07-20
+
+### Security
+- **Device serials no longer leak inside a stringified `@` annotation wrapper.** Central sometimes serializes an object's *entire* annotation set as one stringified value under `@` (observed on alias reads), rather than an expanded dict. The redaction walker saw `@` as one opaque string and never descended, so a DEVICE serial nested inside its `scope_device_function` shipped cleartext — even while the same serial was tokenized elsewhere in the response, so the mask was defeatable by correlation. This is the same class as the earlier `scope_device_function` fix, one level up at the wrapper. The walker now parses the `@` blob (JSON or Python-`repr`) and re-walks its contents, routing the nested `scope_device_function` back through the existing DEVICE-serial handler. The DEVICE-only rule is preserved (SITE / collection names stay cleartext); non-`@` JSON-looking strings are untouched; idempotent. Live-verified: 0 serials leaked across stringified blobs on a real tenant.
+
 ## [3.6.1.3] - 2026-07-17
 
 Mist tool surface resynced from the current vendored OpenAPI spec (regenerated via `scripts/internal/regenerate_mist_tools.py`), closing the drift the cross-platform audit surfaced. Net **+13 tools (1037 → 1050)**; nothing removed.
