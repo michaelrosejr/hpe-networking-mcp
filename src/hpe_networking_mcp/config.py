@@ -10,9 +10,9 @@ Docker Compose secrets (production):
 - Mounted read-only at /run/secrets/<name>
 - Not exposed in `docker inspect` or environment variables
 - Not baked into the Docker image
-- Enable via docker-compose.secrets.yml overlay
+- Declared in the base docker-compose.yml; comment out platforms you don't use
 
-Secret file mapping (production — via docker-compose.secrets.yml overlay):
+Secret file mapping:
     /run/secrets/mist_api_token
     /run/secrets/mist_host
     /run/secrets/central_base_url

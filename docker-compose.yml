@@ -5,16 +5,17 @@ services:
     # To build from source instead, comment out 'image' and uncomment 'build':
     # build: .
     ports:
-      # Loopback-bound by default: this server ships no built-in auth layer, and
-      # ALLOWED_ORIGINS is a browser-origin guard, not authentication. To expose
-      # it beyond localhost, change the host part to 0.0.0.0 (or a specific LAN
-      # IP) — but ONLY behind an authenticating reverse proxy or firewall.
-      - "127.0.0.1:${MCP_PORT:-8000}:8000"
+      # HOST_PORT controls which host port Docker publishes (default 8000).
+      # Change it per-instance when running multiple deployments side-by-side.
+      # The container app port is always 8000; MCP_PORT is not user-configurable.
+      # To expose beyond localhost (only behind an authenticating reverse proxy
+      # or firewall), change the host IP from 127.0.0.1 to 0.0.0.0.
+      - "127.0.0.1:${HOST_PORT:-8000}:8000"
     env_file:
       - path: .env
         required: false
     environment:
-      - MCP_PORT=${MCP_PORT:-8000}
+      - MCP_PORT=8000
       - MCP_HOST=0.0.0.0
       - CUSTOMER_NAME=${CUSTOMER_NAME:-}
       - LOG_LEVEL=${LOG_LEVEL:-info}
