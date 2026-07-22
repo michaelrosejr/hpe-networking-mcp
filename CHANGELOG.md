@@ -5,6 +5,29 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.6.1.9] - 2026-07-21
+
+### Fixed
+- **Calling a tool on an unconfigured platform now says "not configured" instead of a circular dispatch hint.** When a platform has no credentials (empty or absent secret files — `_read_secret` strips and returns `None`, so both are identical), it is correctly disabled and none of its tools register. But an AI that then called, say, `clearpass_invoke_tool` got `{"error":"unknown_tool","candidates":[],"dispatch":"clearpass_invoke_tool(name, params)"}` — the `dispatch` hint pointed back at the very tool that doesn't exist, with no signal that the platform simply isn't configured. `suggest_tools` now detects a known-platform prefix with **zero** registered tools and returns `{"error":"platform_not_configured","platform":<p>,"message":"…not configured on this deployment; skip it, do not retry","candidates":[]}` instead. Applies uniformly to all nine platforms (mist / central / greenlake / clearpass / apstra / axis / aos8 / uxi / edgeconnect) in both code-mode (`sandbox_error_catch`) and dynamic-mode (`meta_tools`) paths. Reported by Zach (ClearPass not configured). Closes #640.
+
+## [3.6.1.8] - 2026-07-21
+
+### Fixed
+- **Raised `ToolError`s now get the same spec-index error enrichment that returned-error envelopes already got.** Platform tools that follow the ToolError contract (Mist's `_client`, others) **raise** `ToolError` on a non-2xx upstream response — which bypassed the reactive spec-index enrichment entirely (it only fired on *returned* non-2xx envelopes via `ResponseEnvelopeMiddleware` and on 422 `ValidationError`s via `ValidationCatchMiddleware`). So a model that guessed and hit, say, a Mist 404 or 429 got only the bare error with no `[spec-index]` hint. New `ToolErrorEnrichMiddleware` catches raised `ToolError`s at `on_call_tool` and appends `reactive_hint(tool_name, status_code)` — the API's documented meaning of the code (e.g. Mist 429 → "5000 API Calls per hour threshold") plus the legal body fields for 400/422 — so the model self-corrects. Best-effort and non-destructive: the original status_code/message are preserved, the suffix is idempotent, and an enrichment failure never breaks dispatch. Reported by Zach (Mist SLE transcript). Closes #638.
+- **Mist SLE tools: guessed `metric` keys now return actionable guidance instead of a bare `404 "no such metric"`.** The SLE `metric` path key is not free-form — valid keys are per-scope and come from `mist_list_site_sles_metrics` (they are dynamic and not in the OpenAPI spec, so the spec-index cannot enumerate them). A model guessing a plausible-but-wrong name (e.g. `successful-connect`, which does not exist — the connection SLE is `time-to-connect`) hit a dead 404. `platforms/mist/_client.py` now enriches that specific 404 with the real common keys and a pointer to `mist_list_site_sles_metrics`.
+- **Corrected the Mist 403 hint, which named a non-existent tool.** The `_raise_for_status` 403 enrichment told the model to call `mist_get_self_account_info` — that tool does not exist (it returns `unknown_tool`); the real one is `mist_get_self`. Fixed the hint and the docstring.
+
+## [3.6.1.7] - 2026-07-20
+
+### Fixed
+- **GreenLake audit-log tools now work — they were generated from the wrong (internal) spec.** `vendor/greenlake/sources.json` pinned the audit-logs spec to HPE's `v1/audit-trail.json`, which the portal serves as an **internal UI backend** (servers on `*.ccs.arubathena.com`, paths `/auditlogs/ui/v1/*`, plus a `/auditligs/` typo) despite the `/public/` URL. Those paths 404 on the public gateway, so every audit tool was dead. Re-pinned to the correct public `audit-logs-latest/@v2beta1/audit-trail-fetch-v2beta1.json` (server `global.api.greenlake.hpe.com`, paths `/audit-log/v2beta1/logs`), verified live. The audit module drops from 9 broken UI/config ops to 3 working reads (`getAuditLogs` / `getAuditLog` / `getAuditLogDetails`). Closes #636.
+
+### Changed
+- **Dropped the internal `service-catalog` "Service Registry" v1alpha1 spec.** It listed `http://localhost:5000` + `*.ccs.arubathena.com` servers and was write-heavy registry-admin (publish/hide/onboard/migrate/unredacted) — a service-provider internal API, not a customer northbound one. Its public read paths are already covered by the `service_catalog_v1beta1_nbapi` spec we keep. Removes ~22 non-functional tools.
+- **GreenLake tool surface resynced to current upstream: 959 → 919 tools** (READ 495 / WRITE 341 / WRITE_DELETE 83) across 163 modules. Beyond the two spec fixes above, the resync corrected pre-existing tool staleness (e.g. `compute-ops-mgmt` `activation-tokens` → `alerts`) and refreshed `device-management` error-detail schemas to match the portal.
+
+### Security
+- **Hardened the GreenLake OAS sync (`.github/scripts/fetch_greenlake_oas.py`) against internal-spec contamination.** It now (1) **hard-fails** when a downloaded spec has internal `/ui/` paths (the audit-logs failure mode — the spec is non-public and its tools would 404), (2) **normalizes** non-public server hosts (`*.arubathena.com`, `localhost`) to the gateway while leaving legit HPE hosts (`*.hpe.com`) untouched, and (3) **warns** (`::warning::`) when a pinned spec has a newer version published on the portal, so version drift becomes a weekly CI signal instead of silent rot. Turns the whole issue-#636 class into an automated guard.
 ## [3.6.1.6] - 2026-07-20
 
 ### Added
